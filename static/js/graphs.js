@@ -4,45 +4,138 @@ queue()
 
 function makeGraphs(error, recordsJson) {
 	
-	//Clean data
-	var records = recordsJson;
-	var dateFormat = d3.time.format("%Y-%m-%d %H:%M:%S");
+	try {
+
+		//Clean data
+		var records = recordsJson;
+		console.log(records);
+		var dateFormat = d3.time.format("%Y-%m-%d %H:%M:%S");
 	
-	records.forEach(function(d) {
-		d["timestamp"] = dateFormat.parse(d["timestamp"]);
-		d["timestamp"].setMinutes(0);
-		d["timestamp"].setSeconds(0);
-		d["longitude"] = +d["longitude"];
-		d["latitude"] = +d["latitude"];
-	});
+		records.forEach(function(d) {
+			d["timestamp"] = dateFormat.parse(d["timestamp"]);
+			d["timestamp"].setMinutes(0);
+			d["timestamp"].setSeconds(0);
+			d["longitude"] = +d["longitude"];
+			d["latitude"] = +d["latitude"];
+		});
 
-	//Create a Crossfilter instance
-	var ndx = crossfilter(records);
+		//Create a Crossfilter instance
+		var ndx = crossfilter(records);
 
-	//Define Dimensions
-	var dateDim = ndx.dimension(function(d) { return d["timestamp"]; });
-	var genderDim = ndx.dimension(function(d) { return d["gender"]; });
-	var ageSegmentDim = ndx.dimension(function(d) { return d["age_segment"]; });
-	var phoneBrandDim = ndx.dimension(function(d) { return d["phone_brand_en"]; });
-	var locationdDim = ndx.dimension(function(d) { return d["location"]; });
-	var allDim = ndx.dimension(function(d) {return d;});
-
-
-	//Group Data
-	var numRecordsByDate = dateDim.group();
-	var genderGroup = genderDim.group();
-	var ageSegmentGroup = ageSegmentDim.group();
-	var phoneBrandGroup = phoneBrandDim.group();
-	var locationGroup = locationdDim.group();
-	var all = ndx.groupAll();
-
-
-	//Define values (to be used in charts)
-	var minDate = dateDim.bottom(1)[0]["timestamp"];
-	var maxDate = dateDim.top(1)[0]["timestamp"];
+		//Define Dimensions
+		var dateDim = ndx.dimension(function(d) { return d["timestamp"]; });
+		var nameDim = ndx.dimension(function(d) { return d["step_name"]; });
+		var descrDim = ndx.dimension(function(d) { return d["step_description"]; });
+		var days_numberDim = ndx.dimension(function(d) { return d["step_days_stayed"]; });
+		var allDim = ndx.dimension(function(d) {return d;});
+		
+		/* 
+		var dateDim = ndx.dimension(function(d) { return d["timestamp"]; });
+		var genderDim = ndx.dimension(function(d) { return d["gender"]; });
+		var ageSegmentDim = ndx.dimension(function(d) { return d["age_segment"]; });
+		var phoneBrandDim = ndx.dimension(function(d) { return d["phone_brand_en"]; });
+		var locationdDim = ndx.dimension(function(d) { return d["location"]; });
+		var allDim = ndx.dimension(function(d) {return d;});
+		*/
 
 
-    //Charts
+		//Group Data
+		var numStepsByDate = dateDim.group();
+		var nameGroup = nameDim.group();
+		var descrGroup = descrDim.group();
+		var days_numberGroup = days_numberDim.group();
+		var all = ndx.groupAll();
+	
+		/*
+		var numRecordsByDate = dateDim.group();
+		var genderGroup = genderDim.group();
+		var ageSegmentGroup = ageSegmentDim.group();
+		var phoneBrandGroup = phoneBrandDim.group();
+		var locationGroup = locationdDim.group();
+		var all = ndx.groupAll();
+		*/
+
+		//Define values (to be used in charts)
+		var minDate = dateFormat.parse("2016-12-30 00:00:00");
+		var maxDate = dateFormat.parse("2017-12-31 00:00:00");
+	
+		/*
+		var minDate = dateDim.bottom(1)[0]["timestamp"];
+		var maxDate = dateDim.top(1)[0]["timestamp"];
+		*/
+
+
+	    //Charts
+	    
+	    var numberSteps = dc.numberDisplay("#number-steps");
+	    var timeChart = dc.barChart("#time-chart");
+	    var locationChart = dc.rowChart("#location-row-chart");
+	    
+	    numberSteps
+			.formatNumber(d3.format("d"))
+			.valueAccessor(function(d){return d; })
+			.group(all);
+		
+		timeChart
+			.width(650)
+			.height(140)
+			.margins({top: 10, right: 50, bottom: 20, left: 20})
+			.dimension(dateDim)
+			.group(numStepsByDate)
+			.transitionDuration(500)
+			.x(d3.time.scale().domain([minDate, maxDate]))
+			.elasticY(true)
+			.yAxis().ticks(4);
+
+		locationChart
+		    	.width(200)
+			.height(510)
+			.dimension(nameDim)
+			.group(nameGroup)
+			.ordering(function(d) { return -d.value })
+			.colors(['#6baed6'])
+			.elasticX(true)
+			.labelOffsetY(10)
+			.xAxis().ticks(4);
+	    
+	    var map = L.map('map');
+
+		var drawMap = function(){
+			map.setView([49, 2.54], 1);
+			mapLink = '<a href="http://openstreetmap.org">OpenStreetMap</a>';
+			L.tileLayer(
+				'http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+					attribution: '&copy; ' + mapLink + ' Contributors',
+					maxZoom: 15,
+				}).addTo(map);
+			
+			//Marker
+			var dimData = allDim.top(Infinity);
+    			dimData.forEach(function (d) {
+        			var marker = L.marker(L.latLng(d["latitude"], d["longitude"])).bindPopup(d["step_name"]).addTo(map);
+    			});
+		};
+
+		//Draw Map
+		drawMap();
+
+		//Update the heatmap if any dc chart get filtered
+		dcCharts = [timeChart, genderChart, ageSegmentChart, phoneBrandChart, locationChart];
+
+		_.each(dcCharts, function (dcChart) {
+			dcChart.on("filtered", function (chart, filter) {
+				map.eachLayer(function (layer) {
+					map.removeLayer(layer)
+				}); 
+				drawMap();
+			});
+		});
+	    
+	    
+	    dc.renderAll();
+    
+    
+    /*
     var numberRecordsND = dc.numberDisplay("#number-records-nd");
 	var timeChart = dc.barChart("#time-chart");
 	var genderChart = dc.rowChart("#gender-row-chart");
@@ -70,38 +163,38 @@ function makeGraphs(error, recordsJson) {
 		.yAxis().ticks(4);
 
 	genderChart
-        .width(300)
-        .height(100)
-        .dimension(genderDim)
-        .group(genderGroup)
-        .ordering(function(d) { return -d.value })
-        .colors(['#6baed6'])
-        .elasticX(true)
-        .xAxis().ticks(4);
+		.width(300)
+		.height(100)
+		.dimension(genderDim)
+		.group(genderGroup)
+		.ordering(function(d) { return -d.value })
+		.colors(['#6baed6'])
+		.elasticX(true)
+		.xAxis().ticks(4);
 
 	ageSegmentChart
 		.width(300)
 		.height(150)
-        .dimension(ageSegmentDim)
-        .group(ageSegmentGroup)
-        .colors(['#6baed6'])
-        .elasticX(true)
-        .labelOffsetY(10)
-        .xAxis().ticks(4);
+		.dimension(ageSegmentDim)
+		.group(ageSegmentGroup)
+		.colors(['#6baed6'])
+		.elasticX(true)
+		.labelOffsetY(10)
+		.xAxis().ticks(4);
 
 	phoneBrandChart
 		.width(300)
 		.height(310)
-        .dimension(phoneBrandDim)
-        .group(phoneBrandGroup)
-        .ordering(function(d) { return -d.value })
-        .colors(['#6baed6'])
-        .elasticX(true)
-        .xAxis().ticks(4);
+		.dimension(phoneBrandDim)
+		.group(phoneBrandGroup)
+		.ordering(function(d) { return -d.value })
+		.colors(['#6baed6'])
+		.elasticX(true)
+		.xAxis().ticks(4);
 
     locationChart
     	.width(200)
-		.height(510)
+	.height(510)
         .dimension(locationdDim)
         .group(locationGroup)
         .ordering(function(d) { return -d.value })
@@ -149,7 +242,10 @@ function makeGraphs(error, recordsJson) {
 			drawMap();
 		});
 	});
+	*/
 
-	dc.renderAll();
+	} catch(e) {
+	  alert("name:" + e.name + "\nmessage:" + e.message)
+	}
 
 };
